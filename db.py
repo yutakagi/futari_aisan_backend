@@ -23,7 +23,7 @@ DB_NAME = os.getenv('DB_NAME')
 
 
 # SSL証明書のパス（Azure上のKuduにアップしたパスに修正）
-SSL_CERT_PATH = '/home/site/wwwroot/certs/ca-cert.pem'
+ssl_cert = '/home/site/wwwroot/certs/ca-cert.pem'
 
 SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}" 
 engine = create_engine(
