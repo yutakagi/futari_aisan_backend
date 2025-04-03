@@ -1,3 +1,4 @@
+### summarizer.py ###
 # ユーザーから送信された回答をGPTのモデルを使用して要約するための処理を実装
 import openai
 from dotenv import load_dotenv # type: ignore

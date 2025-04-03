@@ -1,3 +1,4 @@
+### summarizer_rag.py ###
 # RAGを用いて蓄積された回答の要約情報からレポートとアドバイスを生成する処理
 # DBから取得した各回答の要約をDocumentに変換し、FAISSを利用してベクトル化、検索できるようにしている（ベクトルストアを作成）
 # LangchainのRetrivalQAチェーンを使ってレポート＋アドバイスの生成を行う=>ベクトルストアとチェーンを組み合わせることでより関連性の高い情報を参照しながら生成する仕組み
@@ -9,7 +10,7 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from gpt4omini_llm import GPT4oMiniLLM
 
-async def generate_report_with_rag(answers: list) -> Tuple[str, str]:
+async def generate_report_with_rag(answers: list) -> Tuple[str, str, str]:
     """
     answers: DBから取得したAnswerオブジェクトのリスト。各オブジェクトは .summary を持つとする。
     """
