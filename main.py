@@ -7,8 +7,9 @@ import json
 import logging
 import asyncio
 from pydantic import BaseModel
+from datetime import datetime
 from db import SessionLocal, engine, Base, Answer
-from models import User, UserAnswer, ConversationHistory, StructuredAnswer
+from models import User, UserAnswer, ConversationHistory, StructuredAnswer,GenderEnum
 from summarizer import summarize_answer
 from summarizer_rag import generate_report_with_rag
 from conversation_chain import create_conversation_chain
@@ -54,6 +55,16 @@ class ChatResponse(BaseModel):
     feedback: str = None
     round: int
     message: str = None
+
+    # User用のPydanticスキーマ（models.pyのUser定義を参照）
+class UserCreate(BaseModel):
+    user_id: int
+    name: str
+    gender: GenderEnum
+    birthday: datetime  # フロントエンドからはYYYY-MM-DD形式で送信される想定
+    personality: str
+    couple_id: str
+
 
 # --- エンドポイント ---
 
@@ -150,7 +161,7 @@ async def chat_endpoint(request: ChatRequest):
         db.close()
 
 @app.post("/save_conversation")
-async def save_conversation(session_id: str, user_id: int):
+async def save_conversation(session_id: str, user_id: str):
     db = SessionLocal()
     try:
         # セッションの存在確認
@@ -186,5 +197,42 @@ async def save_conversation(session_id: str, user_id: int):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="保存中にエラーが発生しました")
+    finally:
+        db.close()
+
+@app.post("/register")
+async def register_user(user: UserCreate):
+    db = SessionLocal()
+    try:
+        # 同じユーザーIDでの重複登録を防ぐためのチェック
+        existing_user = db.query(User).filter(User.user_id == user.user_id).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="このユーザーIDは既に登録されています。")
+        
+        new_user = User(
+            user_id=user.user_id,
+            name=user.name,
+            gender=user.gender,
+            birthday=user.birthday,
+            personality=user.personality,
+            couple_id=user.couple_id
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return {
+            "message": "ユーザー登録が完了しました",
+            "user": {
+                "user_id": new_user.user_id,
+                "name": new_user.name,
+                "gender": new_user.gender.value,
+                "birthday": new_user.birthday.isoformat(),
+                "personality": new_user.personality,
+                "couple_id": new_user.couple_id
+            }
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"ユーザー登録中にエラーが発生しました: {str(e)}")
     finally:
         db.close()
