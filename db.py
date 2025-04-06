@@ -23,6 +23,9 @@ DB_PORT = os.getenv('DB_PORT')
 DB_NAME = os.getenv('DB_NAME')
 
 
+# SSL証明書のパス（ローカルで動かすとき）
+# ssl_cert = str(base_path / 'DigiCertGlobalRootCA.crt.pem')
+
 # SSL証明書のパス（Azure上のKuduにアップしたパスに修正）
 ssl_cert = '/home/site/wwwroot/certs/ca-cert.pem'
 
@@ -34,7 +37,7 @@ SQLALCHEMY_DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{D
 #     echo=True
 # )
 
-# Azure上にデプロイするとき ##
+#Azure上にデプロイするとき ##
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
     echo=True,
@@ -46,10 +49,3 @@ engine = create_engine(
     )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-
-class Answer(Base):
-    __tablename__ = "answers"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, index=True)
-    raw_text = Column(Text)
-    summary = Column(Text)

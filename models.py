@@ -45,3 +45,14 @@ class StructuredAnswer(Base):
     conversation_history_id = Column(Integer, ForeignKey("conversation_history.id"), nullable=False)
     answer_summary = Column(Text, nullable=False)  # JSON形式などでまとめた構造化データを保存
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class VectorSummary(Base):
+    """
+    ベクトル検索結果を要約したものを保存するテーブルの例
+    """
+    __tablename__ = "vector_summaries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    query_key = Column(Text, nullable=False)
+    summary_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
