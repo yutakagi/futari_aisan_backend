@@ -1,6 +1,6 @@
 ### models.py ###
 import enum
-from sqlalchemy import Column, String, Date, Integer, DateTime, Text, Enum, ForeignKey
+from sqlalchemy import Column, String, Date, Integer, DateTime, Text, Float, Enum, ForeignKey
 from datetime import datetime
 from db import Base
 
@@ -55,4 +55,26 @@ class VectorSummary(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     query_key = Column(Text, nullable=False)
     summary_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class EmotionAlert(Base):
+    __tablename__ = "emotion_alerts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    # このアラートがどの会話履歴に紐付くか
+    conversation_history_id = Column(Integer, ForeignKey("conversation_history.id"), nullable=False)
+    # アラートを受信するパートナーのユーザーID
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    # アラート対象の最もネガティブな発言
+    most_negative_mention = Column(Text, nullable=False)
+    # 感情スコア (-1.0 ~ +1.0)
+    score = Column(Float, nullable=False)
+    # 感情の強度（0以上の値）
+    magnitude = Column(Float, nullable=False)
+    # 固定の定型テキストで決まった感情ラベル（例："激おこ", "情緒が乱れている" など）
+    label = Column(String(50), nullable=False)
+    # 絵文字で表す、あるいは短いラベル（例："😡"など）
+    emoji = Column(String(10), nullable=False)
+    # 定型のアラート文
+    message = Column(Text, nullable=False)
+    # 生成日時（何日前の感情かを示すため）
     created_at = Column(DateTime, default=datetime.utcnow)
