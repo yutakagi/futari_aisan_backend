@@ -9,7 +9,7 @@ import asyncio
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from db import SessionLocal, engine, Base
-from models import User, UserAnswer, ConversationHistory, StructuredAnswer,GenderEnum
+from models import User, UserAnswer, ConversationHistory, StructuredAnswer,GenderEnum ,EmotionAlert
 from summarizer import summarize_answer
 from summarizer_rag import generate_report_with_rag
 from conversation_chain import create_conversation_chain
@@ -21,6 +21,11 @@ from structured_vector import (
 )
 from models import VectorSummary
 from summarizer import summarize_multiple_docs
+from emotion_analysis import (extract_partner_mentions_llm, 
+                              classify_partner_emotion,
+                              analyze_sentiment,
+)
+
 
 app = FastAPI()
 
@@ -142,10 +147,10 @@ async def save_conversation(session_id: str, user_id: str):
         if session_id not in sessions:
             raise HTTPException(status_code=400, detail="セッションが存在しません。")
         chain = sessions[session_id]
-        # インメモリのチャット履歴から、各メッセージの内容を連結
-        chat_history = "\n".join([msg.content for msg in chain.memory.chat_memory.messages])
 
-        # ConversationHistoryに保存
+        # 会話履歴の連結
+        chat_history = "\n".join([msg.content for msg in chain.memory.chat_memory.messages])
+        # ConversationHistory に保存
         conv_history = ConversationHistory(
             user_id=user_id,
             session_id=session_id,
@@ -155,19 +160,52 @@ async def save_conversation(session_id: str, user_id: str):
         db.commit()
         db.refresh(conv_history)
 
-        # StructuredOutputParserで構造化データに変換
+        # 既存の構造化データ保存処理
         structured_data = extract_structured_data(chat_history)
-
-        # StructuredAnswerに保存（JSON文字列として保存する例）
         structured_answer = StructuredAnswer(
             conversation_history_id=conv_history.id,
             user_id=user_id, 
-            answer_summary=json.dumps(structured_data,ensure_ascii=False)
+            answer_summary=json.dumps(structured_data, ensure_ascii=False)
         )
         db.add(structured_answer)
         db.commit()
 
-        return{"message":"会話履歴と構造化データの保存に成功しました。"}
+        # 感情分析処理
+        # ユーザー発言のみを抽出
+        mentions = extract_partner_mentions_llm(chat_history, partner_name="パートナー")
+        # すべての発言を集約して5段階に分類
+        emotion_alert = classify_partner_emotion(mentions)
+        logging.info(f"[集約感情判定結果] {emotion_alert}")
+        analysis_result = emotion_alert
+
+        # 感情アラートをDBに保存（パートナーのuser_idを取得）
+        user = db.query(User).filter(User.user_id == user_id).first()
+
+        partner = db.query(User).filter(
+            User.couple_id == user.couple_id,
+            User.user_id != user.user_id
+        ).first()
+
+        if partner:
+            alert_record = EmotionAlert(
+                user_id=partner.user_id,
+                conversation_history_id=conv_history.id,
+                most_negative_mention=emotion_alert.get("most_negative_mention", ""),  # なければ空
+                score=emotion_alert["average_score"],
+                magnitude=emotion_alert["max_magnitude"],
+                label=emotion_alert["label"],
+                emoji=emotion_alert["emoji"],
+                message=emotion_alert["message"]
+            )
+            db.add(alert_record)
+            db.commit()
+            logging.info(f"[感情アラート保存済] partner_id={partner.user_id}, label={alert_record.label}")
+
+        return {
+            "message": "会話履歴と構造化データの保存に成功しました。",
+            "emotion_analysis": analysis_result
+        }    
+    
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="保存中にエラーが発生しました")
@@ -278,6 +316,27 @@ async def fixed_structured_vector_search_all(user_id: int, days: int = 7):
             "days_in_range": days,
             "user_name": user_name_with_suffix, 
             "saved_summaries":saved_summaries
+        }
+    finally:
+        db.close()
+
+@app.get("/emotion_alert/latest")
+async def get_latest_emotion_alert(user_id: int):
+    db = SessionLocal()
+    try:
+        alert = (db.query(EmotionAlert)
+                   .filter(EmotionAlert.user_id == user_id)
+                   .order_by(EmotionAlert.created_at.desc())
+                   .first())
+        if not alert:
+            raise HTTPException(status_code=404, detail="最新の感情アラートは見つかりません。")
+        return {
+            "label": alert.label,
+            "emoji": alert.emoji,
+            "message": alert.message,
+            "score": alert.score,
+            "magnitude": alert.magnitude,
+            "created_at": alert.created_at.isoformat()
         }
     finally:
         db.close()
