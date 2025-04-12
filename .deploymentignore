@@ -1,0 +1,21 @@
+# Pythonキャッシュ・バイナリ
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 仮想環境
+.venv/
+venv/
+myenv/
+antenv/
+
+# セキュアファイル
+.env
+gcp-credentials.json
+
+# Node.js系（フロントが混在してる場合）
+node_modules/
+
+# Git関係
+.git/
