@@ -254,7 +254,7 @@ async def register_user(user: UserCreate):
         db.close()
 
 @app.get("/structured_vector_search/fixed_all")
-async def fixed_structured_vector_search_all(user_id: int, days: int = 7):
+async def fixed_structured_vector_search_all(user_id: int):
     """
     直近days日分の構造化データを抽出し、PREDEFINED_QUERIESに定義されたクエリを
     すべてベクトル検索。クエリごとの検索結果をまとめて返す。
@@ -269,57 +269,71 @@ async def fixed_structured_vector_search_all(user_id: int, days: int = 7):
         user_name_with_suffix = f"{user.name}さん"
 
         # 1) 指定日数分遡るため、days引いた日時を計算
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.utcnow() - timedelta(days=4)
 
-        # 2) user_idが一致 & created_atが指定日数内 のStructuredAnswerを取得
-        answers = (db.query(StructuredAnswer)
-                     .filter(StructuredAnswer.user_id == user_id)
-                     .filter(StructuredAnswer.created_at >= cutoff_date)
-                     .all())
-        if not answers:
-            raise HTTPException(status_code=404, detail="該当する構造化データがありません。")
+        async def process_user_data(target_user_id: int):
+            answers = (db.query(StructuredAnswer)
+                       .filter(StructuredAnswer.user_id == target_user_id)
+                       .filter(StructuredAnswer.created_at >= cutoff_date)
+                       .all())
+            if not answers:
+                return None
 
-        # 3) JSON文字列をPythonの辞書として読み込む
-        structured_data_list = [json.loads(ans.answer_summary) for ans in answers]
+            # 3) JSON文字列をPythonの辞書として読み込む
+            structured_data_list = [json.loads(ans.answer_summary) for ans in answers]
 
-        # 4) ベクトルストアを構築
-        vector_store = build_structured_vector_store(structured_data_list)
+            # 4) ベクトルストアを構築
+            vector_store = build_structured_vector_store(structured_data_list)
 
-        # 5) 全クエリ一括検索
-        all_results = search_all_predefined_queries(vector_store, k=3)
+            # 5) 全クエリ一括検索
+            all_results = search_all_predefined_queries(vector_store, k=3)
 
-        # 6)それぞれの結果を個別に要約し、DBに保存
-        saved_summaries = []
-        for query_key,doc_texts in all_results.items():
-            #doc_textsは要約前のベクトルストアから検索したn件のテキスト
-            #これを1つの文字列にまとめる
-            merged_text = "\n\n".join(doc_texts)
-            
-            #LLMに要約
-            summary_text = await summarize_multiple_docs([merged_text])
+            saved_summaries =[]
+            for query_key, doc_texts in all_results.items():
+                #doc_textsは要約前のベクトルストアから検索したn件のテキスト
+                #これを1つの文字列にまとめる
+                merged_text = "\n\n".join(doc_texts)
+                
+                #LLMに要約
+                summary_text = await summarize_multiple_docs([merged_text])
 
-            #DBに保存
-            new_summary = VectorSummary(
-                user_id=user_id,
-                query_key = query_key,
-                summary_text=summary_text
-            )
-            db.add(new_summary)
-            db.commit()
-            db.refresh(new_summary)
+                #DBに保存
+                new_summary = VectorSummary(
+                    user_id=user_id,
+                    query_key = query_key,
+                    summary_text=summary_text
+                )
+                db.add(new_summary)
+                db.commit()
+                db.refresh(new_summary)
+                saved_summaries.append({
+                    "query_key": query_key,
+                    "merged_documents": merged_text,
+                    "summay_text": summary_text
+                })
+            return saved_summaries
+        # 自分の処理
+        user_summaries = await process_user_data(user_id)
 
-            #レスポンス用に格納
-            saved_summaries.append({
-                "query_key":query_key,
-                "merged_documents": merged_text,
-                "summay_text":summary_text
-            })
-        # 7) 結果を返却
-        return {
+        # パートナーが存在する場合の処理
+        partner = db.query(User).filter(
+            User.couple_id == user.couple_id,
+            User.user_id != user.user_id
+        ).first()
+
+        partner_summaries = None
+        partner_name_with_suffix = None
+        if partner:
+            partner_name_with_suffix = f"{partner.name}さん"
+            partner_summaries = await process_user_data(partner.user_id)
+
+        return{
             "user_id": user_id,
-            "days_in_range": days,
-            "user_name": user_name_with_suffix, 
-            "saved_summaries":saved_summaries
+            "user_name": user_name_with_suffix,
+            "partner_user_id": partner.user_id if partner else None,
+            "partner_name": partner_name_with_suffix,
+            "user_summaries": user_summaries,
+            "partner_summaries": partner_summaries
         }
     finally:
         db.close()
