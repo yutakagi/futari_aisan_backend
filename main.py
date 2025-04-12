@@ -1,4 +1,8 @@
 ### main.py ###
+import os
+# GCP環境変数を指定
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "gcp-credentials.json"
+
 # 各種エンドポイントを定義
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
