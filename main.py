@@ -144,7 +144,7 @@ async def chat_endpoint(request: ChatRequest):
         db.close()
 
 @app.post("/save_conversation")
-async def save_conversation(session_id: str, user_id: str):
+async def save_conversation(session_id: str, user_id: int):
     db = SessionLocal()
     try:
         # セッションの存在確認
@@ -211,6 +211,7 @@ async def save_conversation(session_id: str, user_id: str):
         }    
     
     except Exception as e:
+        logger.exception("エラー内容:")
         db.rollback()
         raise HTTPException(status_code=500, detail="保存中にエラーが発生しました")
     finally:

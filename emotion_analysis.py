@@ -35,7 +35,7 @@ def extract_partner_mentions_llm(chat_history: str, partner_name: str = None) ->
         result = llm.invoke(prompt)
         if hasattr(result, "content"):
             result = result.content
-        logging.debug(f"LLM raw output:\n{result}")
+        logging.info(f"LLM raw output:\n{result}")
         mentions = parser.parse(result)
         if not isinstance(mentions, list):
             raise ValueError("抽出結果がリスト形式ではありません")
