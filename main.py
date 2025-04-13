@@ -14,8 +14,10 @@ import asyncio
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from db import SessionLocal, engine, Base
-from models import User, UserAnswer, ConversationHistory, StructuredAnswer,GenderEnum ,EmotionAlert
+from models import User, UserAnswer, ConversationHistory, StructuredAnswer,GenderEnum ,EmotionAlert,DialogueAdvice
 from summarizer import summarize_answer
+from summarizer import generate_couple_conversation_advice
+from summarizer import summarize_multiple_docs
 from summarizer_rag import generate_report_with_rag
 from conversation_chain import create_conversation_chain
 from structured_parser import extract_structured_data
@@ -25,7 +27,6 @@ from structured_vector import (
     PREDEFINED_QUERIES
 )
 from models import VectorSummary
-from summarizer import summarize_multiple_docs
 from emotion_analysis import (extract_partner_mentions_llm, 
                               classify_partner_emotion,
                               analyze_sentiment,
@@ -378,3 +379,65 @@ async def test_emotion_endpoint(input_data: SentimentTestInput):
     except Exception as e:
         logger.exception("GCP感情分析APIの呼び出し中にエラーが発生しました")
         raise HTTPException(status_code=500, detail=f"GCP感情分析APIエラー: {str(e)}")
+    
+@app.get("/dialogue_advice")
+async def get_dialogue_advice(user_id: int):
+    db = SessionLocal()
+    try:
+        # 最新の要約データを取得
+        cutoff_date = datetime.utcnow()-timedelta(days=4)
+        def fetch_latest_summaries(uid):
+            return(db.query(VectorSummary)
+                    .filter(VectorSummary.user_id == uid)
+                    .filter(VectorSummary.created_at >= cutoff_date)
+                    .all())
+        user_summaries = fetch_latest_summaries(user_id)
+
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+        
+        partner = db.query(User).filter(
+            User.couple_id == user.couple_id,
+            User.user_id != user.user_id
+        ).first()
+
+        partner_summaries = fetch_latest_summaries(partner.user_id) if partner else []
+        # ユーザーとパートナーのMBTIを取得
+        user_mbti = user.personality
+        partner_mbti = partner.personality if partner else "不明"
+        #ユーザーとパートナーの名前を取得
+        user_name = user.name
+        partner_name = partner.name if partner else "不明"
+
+        # 対話アドバイスを生成
+        advice_text = await generate_couple_conversation_advice(
+            user_summary_blocks=[
+                {"query_key":s.query_key, "summay_text":s.summary_text}
+                for s in user_summaries
+            ],
+            partner_summary_blocks=[
+                {"query_key": s.query_key, "summay_text": s.summary_text}
+                for s in partner_summaries
+            ],
+            user_mbti=user_mbti,
+            partner_mbti=partner_mbti,
+            user_name=user.name,
+            partner_name=partner.name
+        )
+        # 対話アドバイスをDBに保存
+        advice_record = DialogueAdvice(
+            couple_id = user.couple_id,
+            user_id = user.user_id,
+            advice_text=advice_text
+        )
+        db.add(advice_record)
+        db.commit()
+
+        return {"advice":advice_text}
+
+    except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()

@@ -78,3 +78,11 @@ class EmotionAlert(Base):
     message = Column(Text, nullable=False)
     # 生成日時（何日前の感情かを示すため）
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class DialogueAdvice(Base):
+    __tablename__ = "dialogue_advice"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    couple_id = Column(String(50), nullable=False)
+    user_id = Column(Integer, nullable=False)  # 誰がこのアドバイスを見たか
+    advice_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
