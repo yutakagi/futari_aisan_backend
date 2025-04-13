@@ -1,7 +1,8 @@
 ### main.py ###
 import os
 # GCP環境変数を指定
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "gcp-credentials.json"
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "gcp-credentials.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/home/site/wwwroot/gcp-credentials.json"
 
 # 各種エンドポイントを定義
 from fastapi import FastAPI, HTTPException
