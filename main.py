@@ -81,6 +81,9 @@ class UserCreate(BaseModel):
     personality: str
     couple_id: str
 
+# 感情分析確認用の入力スキーマ
+class SentimentTestInput(BaseModel):
+    text: str
 
 # --- エンドポイント ---
 
@@ -187,7 +190,7 @@ async def save_conversation(session_id: str, user_id: int):
 
         partner = db.query(User).filter(
             User.couple_id == user.couple_id,
-            User.user_id != user.user_id
+            User.user_id != user_id
         ).first()
 
         if partner:
@@ -359,3 +362,18 @@ async def get_latest_emotion_alert(user_id: int):
         }
     finally:
         db.close()
+
+# 感情分析確認用エンドポイント
+@app.post("/test_emotion", summary="GCP感情分析APIの動作確認")
+async def test_emotion_endpoint(input_data: SentimentTestInput):
+    try:
+        # 入力テキストに対して感情分析を実行
+        score, magnitude = analyze_sentiment(input_data.text)
+        return {
+            "score": score,
+            "magnitude": magnitude,
+            "message": "感情分析APIは正常に動作しています。"
+        }
+    except Exception as e:
+        logger.exception("GCP感情分析APIの呼び出し中にエラーが発生しました")
+        raise HTTPException(status_code=500, detail=f"GCP感情分析APIエラー: {str(e)}")
