@@ -452,7 +452,7 @@ def read_one_reflection(
 @app.get("/report_reminding")
 async def report_reminding(user_id: int):
     """
-    直近3件のレポートをまとめて分析し、Goodthing_remindとBadthing_remindを返す
+    パートナーの直近3件のレポートを分析し、Goodthing_remindとBadthing_remindを返す
     """
     db = SessionLocal()
     try:
@@ -460,6 +460,19 @@ async def report_reminding(user_id: int):
         user = db.query(User).get(user_id)
         if not user:
             raise HTTPException(status_code=404, detail="該当するユーザーが見つかりません。")
+
+        # パートナー情報の取得ロジック追加
+        if not user.couple_id:
+            raise HTTPException(status_code=400, detail="ユーザーに紐づくカップルIDが存在しません。")
+
+        # 同じcouple_idで自分以外のユーザー（パートナー）を取得
+        partner = db.query(User).filter(
+            User.couple_id == user.couple_id,
+            User.user_id != user_id
+        ).first()
+
+        if not partner:
+            raise HTTPException(status_code=404, detail="パートナーが見つかりません。")
 
         async def process_user_data(target_user_id: int) -> dict:
             # 直近3件のレポートを取得（作成日時の降順）
@@ -487,8 +500,8 @@ async def report_reminding(user_id: int):
                 "Goodthing_remind": good_summary,
                 "Badthing_remind": bad_summary
             }
-
-        return await process_user_data(user_id)
+  # パートナーのuser_idを渡す
+        return await process_user_data(partner.user_id)
     finally:
         db.close()
 
