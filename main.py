@@ -566,6 +566,9 @@ async def get_dialogue_advice(user_id: int):
             user_name=user.name,
             partner_name=partner.name
         )
+        ## デバックコード
+        print("=====LLM出力=====")
+        print(advice_text)
         # 対話アドバイスをDBに保存
         advice_record = DialogueAdvice(
             couple_id = user.couple_id,
