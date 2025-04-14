@@ -88,3 +88,11 @@ class UserReflections(Base):
     future_plans: Mapped[str] = mapped_column(Text, comment="これからやろうと思うこと")
     want_to_discuss: Mapped[str] = mapped_column(Text, comment="まだ話足りないこと")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+class DialogueAdvice(Base):
+    __tablename__ = "dialogue_advice"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    couple_id = Column(String(50), nullable=False)
+    user_id = Column(Integer, nullable=False)  # 誰がこのアドバイスを見たか
+    advice_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
