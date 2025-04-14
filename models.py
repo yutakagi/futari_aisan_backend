@@ -3,6 +3,7 @@ import enum
 from sqlalchemy import Column, String, Date, Integer, DateTime, Text, Float, Enum, ForeignKey
 from datetime import datetime
 from db import Base
+from sqlalchemy.orm import Mapped, mapped_column
 
 # GenderEnum定義
 class GenderEnum(enum.Enum):
@@ -78,6 +79,15 @@ class EmotionAlert(Base):
     message = Column(Text, nullable=False)
     # 生成日時（何日前の感情かを示すため）
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class UserReflections(Base):
+    __tablename__ = 'reflections'
+    
+    reflection_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(Text, comment="メールアドレスなどユーザーID")
+    future_plans: Mapped[str] = mapped_column(Text, comment="これからやろうと思うこと")
+    want_to_discuss: Mapped[str] = mapped_column(Text, comment="まだ話足りないこと")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 class DialogueAdvice(Base):
     __tablename__ = "dialogue_advice"

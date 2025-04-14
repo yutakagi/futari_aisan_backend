@@ -5,12 +5,14 @@ import os
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/home/site/wwwroot/gcp-credentials.json"
 
 # 各種エンドポイントを定義
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
 import json
 import logging
 import asyncio
+import crud
+import models
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from db import SessionLocal, engine, Base
@@ -21,17 +23,19 @@ from summarizer import summarize_multiple_docs
 from summarizer_rag import generate_report_with_rag
 from conversation_chain import create_conversation_chain
 from structured_parser import extract_structured_data
+from reminder_perser import extract_structured_data_reminder
 from structured_vector import (
     build_structured_vector_store,
     search_all_predefined_queries,
     PREDEFINED_QUERIES
 )
+
 from models import VectorSummary
 from emotion_analysis import (extract_partner_mentions_llm, 
                               classify_partner_emotion,
                               analyze_sentiment,
 )
-
+from typing import Optional
 
 app = FastAPI()
 
@@ -82,6 +86,13 @@ class UserCreate(BaseModel):
     birthday: datetime  # フロントエンドからはYYYY-MM-DD形式で送信される想定
     personality: str
     couple_id: str
+
+class UserReflection(BaseModel):
+    reflection_id: Optional[str] = None  # 指定がなければ自動生成
+    user_id: str
+    future_plans: str  # これからやろうと思うこと
+    want_to_discuss: str  # まだ話足りないこと
+    created_at: Optional[datetime] = None
 
 # 感情分析確認用の入力スキーマ
 class SentimentTestInput(BaseModel):
@@ -364,6 +375,123 @@ async def get_latest_emotion_alert(user_id: int):
         }
     finally:
         db.close()
+
+
+@app.post("/reflections")
+def create_reflection(reflection: UserReflection):
+    values = reflection.dict()
+    
+    # IDが指定されていない場合は自動生成
+    if not values.get("reflection_id"):
+        values["reflection_id"] = str(uuid.uuid4())
+    
+    # 作成日時が指定されていない場合は現在時刻を設定
+    if not values.get("created_at"):
+        values["created_at"] = datetime.now()
+    
+    tmp = crud.myinsert(models.UserReflections, values)
+    result = crud.myselect(models.UserReflections, values.get("reflection_id"))
+
+    if result:
+        result_obj = json.loads(result)
+        return result_obj if result_obj else None
+    return None
+
+@app.get("/reflections")
+def read_one_reflection(
+    user_id: str = Query(...),
+    include_partner: bool = Query(False, description="パートナーの振り返りを取得する場合はTrue")
+):
+    """
+    ユーザーIDに基づいてリフレクションを取得する。
+    include_partner=Falseの場合は自分の振り返り、Trueの場合はパートナーの振り返りを返す。
+    """
+    try:
+        if not include_partner:
+            # 自分の振り返りを取得
+            result = crud.myselect(models.UserReflections, user_id)
+            
+            # 結果がない場合のハンドリング
+            if not result or result == "[]":
+                return {"message": "No reflections found for this user"}
+            
+            # 文字列形式のJSONをPythonオブジェクトに変換
+            result_list = json.loads(result)
+            return result_list
+        else:
+            # パートナーの振り返りを取得
+            try:
+                # ユーザー情報を取得してcouple_idを確認
+                user = crud.get_user_by_id(user_id)
+                if not user or not user.couple_id:
+                    return {"message": "User has no partner"}
+                
+                # 同じcouple_idで自分以外のユーザー（パートナー）を取得
+                partner = crud.get_partner(user.couple_id, user_id)
+                if not partner:
+                    return {"message": "Partner not found"}
+                
+                # パートナーの振り返りを取得
+                partner_result = crud.myselect(models.UserReflections, partner.user_id)
+                if not partner_result or partner_result == "[]":
+                    return {"message": "No reflections found for partner"}
+                
+                # パートナーの振り返りを返す
+                return json.loads(partner_result)
+            except Exception as e:
+                print(f"Error fetching partner reflections: {str(e)}")
+                raise HTTPException(status_code=500, detail="Error fetching partner reflections")
+    except Exception as e:
+        # エラーログを出力
+        print(f"Error in read_one_reflection: {str(e)}")
+        # HTTPエラーを返す
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+
+@app.get("/report_reminding")
+async def report_reminding(user_id: int):
+    """
+    直近3件のレポートをまとめて分析し、Goodthing_remindとBadthing_remindを返す
+    """
+    db = SessionLocal()
+    try:
+        # ユーザー情報取得
+        user = db.query(User).get(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="該当するユーザーが見つかりません。")
+
+        async def process_user_data(target_user_id: int) -> dict:
+            # 直近3件のレポートを取得（作成日時の降順）
+            recent_summaries = db.query(VectorSummary).filter(
+                VectorSummary.user_id == target_user_id
+            ).order_by(VectorSummary.created_at.desc()).limit(3).all()
+
+            if not recent_summaries:
+                return {"Goodthing_remind": "該当する情報がありません", "Badthing_remind": "該当する情報がありません"}
+
+            # 有効な要約テキストを結合
+            combined_text = "\n\n".join([s.summary_text for s in recent_summaries if s.summary_text])
+            
+            if not combined_text:
+                return {"Goodthing_remind": "該当する情報がありません", "Badthing_remind": "該当する情報がありません"}
+
+            # 全レポートをまとめて分析
+            analysis_results = extract_structured_data_reminder(combined_text)
+
+            # Good/Badを抽出して返却
+            good_summary = analysis_results.get("Goodthing_remind", "該当する情報がありません")
+            bad_summary = analysis_results.get("Badthing_remind", "該当する情報がありません")
+
+            return {
+                "Goodthing_remind": good_summary,
+                "Badthing_remind": bad_summary
+            }
+
+        return await process_user_data(user_id)
+    finally:
+        db.close()
+
 
 # 感情分析確認用エンドポイント
 @app.post("/test_emotion", summary="GCP感情分析APIの動作確認")
