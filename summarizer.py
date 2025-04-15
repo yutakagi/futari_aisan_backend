@@ -51,6 +51,10 @@ async def generate_couple_conversation_advice(
     partner_summary_blocks: [{query_key, summay_text}]
     を受け取り、夫婦の対話に関するコーチ的アドバイスを生成する
     """
+     # 最新の3件だけに絞る
+     user_summary_blocks = user_summary_blocks[-3:]
+     partner_summary_blocks = partner_summary_blocks[-3:]
+     
      def format_block(blocks,name):
          return "\n\n".join(
              f"{name}の「{b['query_key']}」に関する要約:\n{b['summay_text']}"
